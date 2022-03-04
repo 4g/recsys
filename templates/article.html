@@ -1,0 +1,31 @@
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+
+table, td {
+  border:1px solid black;
+  border-collapse: collapse;
+}
+
+</style>
+</head>
+<body>
+
+    <table width="30%">
+        <tr>
+            <td>Image</td>
+            <td><img src=/image/{{article.article_id}}> </td>
+        </tr>
+    {% for key, value in article.items() %}
+          <tr>
+            <td>{{key}}</td>
+              <td>{{value}}</td>
+          </tr>
+    {% endfor %}
+
+    </table>
+
+</body>
+</html>
+

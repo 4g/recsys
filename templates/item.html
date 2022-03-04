@@ -1,0 +1,69 @@
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+* {
+  box-sizing: border-box;
+}
+
+
+/* Float four columns side by side */
+.column {
+  float: left;
+  padding: 1px 1px;
+}
+
+/* Remove extra left and right margins, due to padding */
+.row {margin: 0 -5px;}
+
+/* Clear floats after the columns */
+.row:after {
+  content: "";
+  display: table;
+  clear: both;
+}
+
+/* Responsive columns */
+@media screen and (max-width: 600px) {
+  .column {
+    width: 100%;
+    display: block;
+    margin-bottom: 10px;
+  }
+}
+
+/* Style the counter cards */
+.card {
+  box-shadow: 0 2px 2px 0 rgba(0, 0, 0, 0.2);
+  padding: 1px;
+<!--  white-space: nowrap;-->
+  text-align: center;
+  line-height: .6;
+  cursor: pointer;
+}
+</style>
+</head>
+<body>
+<small>
+    <div class="row">
+        <p>
+        {% for key, value in customer.items() %}
+            {{key}}:{{value}} ||
+        {% endfor %}
+        </p>
+    </div>
+
+    <div class="row">
+        {% for transaction in transactions %}
+            <div class="column">
+            <div class="card" onclick="location.href='../article/{{transaction.article_detail.article_id}}'">
+                <img src=/image/{{transaction.article_detail.article_id}} loading="lazy">
+                <p> {{transaction.article_detail.prod_name.lower()}}</p>
+                   <p> {{transaction.timestamp}} </p>
+            </div>
+            </div>
+        {% endfor %}
+    </div>
+</small>
+</body>
+</html>
