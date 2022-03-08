@@ -57,7 +57,7 @@ if __name__ == '__main__':
   all_columns = list(set(article_columns + customer_columns))
   datastore.transactions = datastore.transactions[all_columns]
 
-  train_datastore, val_datastore = datastore.split_by_date(datastore.end_date - pd.Timedelta(days=7))
+  train_datastore, val_datastore = datastore.split_by_date(datastore.end_date - pd.Timedelta(days=8))
 
   print(train_datastore.info())
   print(val_datastore.info())
