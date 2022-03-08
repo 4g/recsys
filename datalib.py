@@ -98,6 +98,11 @@ class Datastore:
 
     return info
 
+  def join_all(self):
+    new_df = self.transactions.join(self.articles.set_index('article_id'), on='article_id')
+    new_df = new_df.join(self.customers.set_index('customer_id'), on='customer_id')
+    return new_df
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
