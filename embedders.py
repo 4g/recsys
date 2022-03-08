@@ -10,47 +10,16 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 tf.get_logger().setLevel('ERROR')
 
 class FieldsModel(tf.keras.Model):
-  def __init__(self, articles, text_columns=[], emb_dim=8):
+  def __init__(self, features, columns, text_columns=(), emb_dim=8):
     super().__init__()
-    integer_columns = set()
-    string_columns = set()
-
-    columns = list(articles.columns)
-
-    for column in columns:
-      dtype = articles[column].dtype
-
-      if dtype == np.float32 or dtype == np.float64:
-        articles[column].fillna(-1, inplace=True)
-        articles[column].astype(np.int64)
-        dtype = np.int64
-
-      if column in text_columns:
-        continue
-      if dtype == np.int64:
-        articles[column].fillna(-1, inplace=True)
-        integer_columns.add(column)
-      else:
-        articles[column].fillna("[EMPTY]", inplace=True)
-        string_columns.add(column)
-
-    # print(f"text: {text_columns}\ninteger: {integer_columns}\nstring: {string_columns}")
 
     embedders = {}
 
     for column in columns:
-      if column in integer_columns:
-        lookup_layer = tf.keras.layers.IntegerLookup()
-        seq_layers = []
+      lookup_layer = tf.keras.layers.StringLookup()
+      seq_layers = [tf.keras.layers.InputLayer(input_shape=[], dtype=tf.string)]
 
-      elif column in string_columns:
-        lookup_layer = tf.keras.layers.StringLookup()
-        seq_layers = [tf.keras.layers.InputLayer(input_shape=[], dtype=tf.string)]
-
-      else:
-        continue
-
-      values = np.unique(articles[column].values)
+      values = np.unique(features[column].values)
       lookup_layer.adapt(values)
       num_tokens = lookup_layer.vocabulary_size()
 
@@ -63,7 +32,7 @@ class FieldsModel(tf.keras.Model):
 
     max_tokens = 10000
     for column in text_columns:
-      text_ds = list(articles[column].values)
+      text_ds = list(features[column].values)
       text_ds = ["" if x is None else x for x in text_ds]
 
       # create embedder for text
@@ -82,18 +51,12 @@ class FieldsModel(tf.keras.Model):
       embedders[column] = text_embedder
 
     self.embedders = embedders
-    self.integer_columns = list(integer_columns)
-    self.text_columns = list(text_columns)
-    self.string_columns = list(string_columns)
 
   def call(self, article):
     values = []
     for column in self.embedders:
       embedder = self.embedders[column]
-      # print(embedder.summary())
       value = article[column]
-      # if (column in self.string_columns) or (column in self.text_columns):
-      #   value = tf.constant([value])
       embedding = embedder(value)
       values.append(embedding)
 
@@ -101,16 +64,22 @@ class FieldsModel(tf.keras.Model):
 
 if __name__ == '__main__':
   datastore = Datastore().load_from_dir("data/sample42/")
+  datastore.transactions = datastore.join_all()
 
-  article_model = FieldsModel(datastore.articles, {'detail_desc', 'prod_name'})
-  customer_model = FieldsModel(datastore.customers)
+  article_columns = ["article_id", 'section_no', 'garment_group_no', 'product_type_no', 't_dat']
 
-  article = datastore.articles.sample(1).to_dict(orient="records")[0]
-  customer = datastore.customers.sample(1).to_dict(orient="records")[0]
+  datastore.convert_columns_categorical(datastore.transactions)
+  article_model = FieldsModel(datastore.transactions,
+                              columns=article_columns)
 
-  embedding = article_model(article)
-  print(embedding)
+  article = datastore.transactions[article_columns]
+  train_ds = tf.data.Dataset.from_tensor_slices(dict(article))
+  train_ds.shuffle(10, seed=42, reshuffle_each_iteration=False)
+  cached_train = train_ds.prefetch(buffer_size=10).batch(10).cache()
 
-  embedding = customer_model(customer)
-  print(embedding)
+  from tqdm import tqdm
+  for elem in tqdm(cached_train.take(1000)):
+    embedding = article_model(elem)
+
+
 

@@ -1,3 +1,4 @@
+import pandas as pd
 import  tensorflow as tf
 import tensorflow_recommenders as tfrs
 from embedders import FieldsModel
@@ -38,11 +39,7 @@ class RecommenderModel(tfrs.models.Model):
     return self.task(query_embeddings, movie_embeddings)
 
 def datastore_to_dataset(datastore):
-  datastore.transactions['t_dat'] = datastore.transactions['t_dat'].astype(str)
-  new_df = datastore.transactions.join(datastore.articles.set_index('article_id'), on='article_id')
-  new_df = new_df.join(datastore.customers.set_index('customer_id'), on='customer_id')
-
-  train_ds = tf.data.Dataset.from_tensor_slices(dict(new_df))
+  train_ds = tf.data.Dataset.from_tensor_slices(dict(datastore.transactions))
   train_ds.shuffle(5_000_000, seed=42, reshuffle_each_iteration=False)
   cached_train = train_ds.prefetch(buffer_size=10_000_000).batch(4096).cache()
   return cached_train
@@ -50,40 +47,37 @@ def datastore_to_dataset(datastore):
 if __name__ == '__main__':
   from datalib import Datastore
   datastore = Datastore().load_from_dir("data/sample42/")
-  datastore = datastore.tail(days=51)
+  datastore = datastore.tail(days=15)
   datastore.transactions = datastore.join_all()
 
-  article_columns = ['article_id', 'section_no', 'garment_group_no', 'product_type_no', 'department_no', 'index_name']
-  customer_columns = ['customer_id']
 
-  all_columns = article_columns + customer_columns
+  article_columns = ['article_id', 'section_no', 'garment_group_no', 'product_type_no', 'department_no', 'index_name', 't_dat']
+  customer_columns = ['customer_id', 't_dat']
+
+  all_columns = list(set(article_columns + customer_columns))
   datastore.transactions = datastore.transactions[all_columns]
 
-  for column in list(datastore.articles.columns):
-    dtype = datastore.articles[column].dtype
-    if dtype == np.int64:
-      datastore.articles[column].fillna(0, inplace=True)
-    else:
-      datastore.articles[column].fillna("", inplace=True)
+  train_datastore, val_datastore = datastore.split_by_date(datastore.end_date - pd.Timedelta(days=7))
 
-  article_feature_names = list(datastore.articles.columns)
-  customer_feature_names = list(datastore.customers.columns)
+  print(train_datastore.info())
+  print(val_datastore.info())
 
-  article_model = FieldsModel(datastore.transactions, article_columns)
-  customer_model = FieldsModel(datastore.transactions, customer_columns)
+  train_datastore.transactions = Datastore.convert_columns_categorical(train_datastore.transactions)
+  val_datastore.transactions = Datastore.convert_columns_categorical(val_datastore.transactions)
 
-  articles_as_tfds = dict(datastore.articles)
+  df = train_datastore.transactions
+  article_model = FieldsModel(train_datastore.transactions, article_columns)
+  customer_model = FieldsModel(train_datastore.transactions, customer_columns)
+
+  articles_as_tfds = dict(train_datastore.transactions)
   articles_as_tfds = tf.data.Dataset.from_tensor_slices(articles_as_tfds)
   recommender_model = RecommenderModel(article_model,
                                        customer_model,
                                        articles_as_tfds,
-                                       article_feature_names,
-                                       customer_feature_names)
+                                       article_columns,
+                                       customer_columns)
 
 
-  train_datastore, val_datastore = datastore.split_by_date()
-  print(train_datastore.info())
-  print(val_datastore.info())
 
   train_ds = datastore_to_dataset(train_datastore)
   val_ds = datastore_to_dataset(val_datastore)
