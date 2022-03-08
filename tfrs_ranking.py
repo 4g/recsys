@@ -47,7 +47,7 @@ def datastore_to_dataset(datastore):
 if __name__ == '__main__':
   from datalib import Datastore
   datastore = Datastore().load_from_dir("data/sample42/")
-  datastore = datastore.tail(days=15)
+  datastore = datastore.tail(days=51)
   datastore.transactions = datastore.join_all()
 
 
@@ -69,7 +69,7 @@ if __name__ == '__main__':
   article_model = FieldsModel(train_datastore.transactions, article_columns)
   customer_model = FieldsModel(train_datastore.transactions, customer_columns)
 
-  articles_as_tfds = dict(train_datastore.transactions)
+  articles_as_tfds = dict(train_datastore.transactions[article_columns])
   articles_as_tfds = tf.data.Dataset.from_tensor_slices(articles_as_tfds)
   recommender_model = RecommenderModel(article_model,
                                        customer_model,
