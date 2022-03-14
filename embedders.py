@@ -1,5 +1,6 @@
 import os
 
+from keras import layers
 from datalib import Datastore, Fields
 import numpy as np
 
@@ -10,18 +11,26 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 tf.get_logger().setLevel('ERROR')
 
 class FieldsModel(tf.keras.Model):
-  def __init__(self, features, columns, text_columns=(), emb_dim=8):
+  def __init__(self, features, columns, max_tokens=3000000):
     super().__init__()
 
     embedders = {}
 
     for column in columns:
-      lookup_layer = tf.keras.layers.StringLookup()
-      seq_layers = [tf.keras.layers.InputLayer(input_shape=[], dtype=tf.string)]
-
+      seq_layers = []
       values = np.unique(features[column].values)
-      lookup_layer.adapt(values)
-      num_tokens = lookup_layer.vocabulary_size()
+      num_tokens = len(values)
+      dtype = features[column].dtype
+      print(column, dtype)
+      if dtype == np.int64:
+        lookup = layers.IntegerLookup
+      else:
+        lookup = layers.StringLookup
+
+      lookup_layer = lookup(max_tokens=num_tokens + 1, vocabulary=values)
+
+      emb_dim = int(6*(num_tokens**.25))
+      print(f"{column}: nvalues:{len(values)} == {num_tokens} || ndim:{emb_dim}")
 
       seq_layers += [
         lookup_layer,
@@ -30,25 +39,25 @@ class FieldsModel(tf.keras.Model):
       embedder = tf.keras.Sequential(seq_layers, name=column)
       embedders[column] = embedder
 
-    max_tokens = 10000
-    for column in text_columns:
-      text_ds = list(features[column].values)
-      text_ds = ["" if x is None else x for x in text_ds]
+    # max_tokens = 10000
+    # for column in text_columns:
+    #   text_ds = list(features[column].values)
+    #   text_ds = ["" if x is None else x for x in text_ds]
+    #
+    #   # create embedder for text
+    #   text_vectorizer = tf.keras.layers.TextVectorization(
+    #     max_tokens=max_tokens)
+    #   text_vectorizer.adapt(text_ds)
+    #   x = text_vectorizer.vocabulary_size()
+    #   num_tokens = min(x, max_tokens)
+    #   text_embedder = tf.keras.Sequential([
+    #     text_vectorizer,
+    #     tf.keras.layers.Embedding(num_tokens, emb_dim, mask_zero=True),
+    #     tf.keras.layers.GlobalAveragePooling1D(),
+    #   ], name=column)
+    #
 
-      # create embedder for text
-      text_vectorizer = tf.keras.layers.TextVectorization(
-        max_tokens=max_tokens)
-      text_vectorizer.adapt(text_ds)
-      x = text_vectorizer.vocabulary_size()
-      num_tokens = min(x, max_tokens)
-      text_embedder = tf.keras.Sequential([
-        text_vectorizer,
-        tf.keras.layers.Embedding(num_tokens, emb_dim, mask_zero=True),
-        tf.keras.layers.GlobalAveragePooling1D(),
-      ], name=column)
-
-
-      embedders[column] = text_embedder
+      # embedders[column] = text_embedder
 
     self.embedders = embedders
 

@@ -21,6 +21,17 @@ def apk(actual, predicted, k=12):
 def mapk(actual, predicted, k=12):
     return np.mean([apk(a,p,k) for a,p in zip(actual, predicted)])
 
+def recall(actual, predicted, k=12):
+  score = 0
+  for a, p in zip(actual, predicted):
+    seta = set(a)
+    setp = set(p[:k])
+    score += len(seta.intersection(setp)) / len(seta)
+
+  score = score / len(actual)
+  return score
+
+
 def get_score(predicted, real):
   empty_set = set()
   prec_sum = 0

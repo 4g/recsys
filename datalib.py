@@ -10,6 +10,7 @@ class Fields:
   sales = 'sales'
   start_date = 'start_date'
   end_date = 'end_date'
+  price = 'price'
 
 class Datastore:
   def __init__(self, articles=None, customers=None, transactions=None):
@@ -103,14 +104,6 @@ class Datastore:
     new_df = self.transactions.join(self.articles.set_index('article_id'), on='article_id')
     new_df = new_df.join(self.customers.set_index('customer_id'), on='customer_id')
     return new_df
-
-  @staticmethod
-  def convert_columns_categorical(df):
-    columns = list(df.columns)
-    for column in columns:
-      df[column] = df[column].astype(str)
-      df[column].fillna("[EMPTY]", inplace=True)
-    return df
 
 if __name__ == "__main__":
     import argparse
