@@ -47,11 +47,11 @@ class RecommenderModel(tfrs.models.Model):
     query_embeddings = self.query_model(features)
     movie_embeddings = self.candidate_model(features)
 
-    return self.task(query_embeddings, movie_embeddings)
+    return self.task(query_embeddings, movie_embeddings, compute_metrics=not training)
 
 def datastore_to_dataset(datastore, batch_size):
   train_ds = tf.data.Dataset.from_tensor_slices(dict(datastore.transactions))
-  train_ds.shuffle(buffer_size=5_000_000, seed=42, reshuffle_each_iteration=True)
+  # train_ds.shuffle(buffer_size=5_000_000, seed=42, reshuffle_each_iteration=True)
   cached_train = train_ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
   return cached_train
 
@@ -80,10 +80,10 @@ def train(datastore, train_days, test_days, epochs, article_columns, customer_co
                                        customer_model,
                                        articles_as_tfds)
 
-  train_ds = datastore_to_dataset(train_datastore, batch_size=2048)
+  train_ds = datastore_to_dataset(train_datastore, batch_size=512)
   val_ds = datastore_to_dataset(val_datastore, batch_size=8192)
 
-  recommender_model.compile(optimizer=tf.keras.optimizers.Adam(clipnorm=100))
+  recommender_model.compile(optimizer=tf.keras.optimizers.Adam(0.001, clipnorm=100))
   try:
     recommender_model.fit(train_ds, validation_data=val_ds, epochs=epochs)
   except:
@@ -98,6 +98,8 @@ def train(datastore, train_days, test_days, epochs, article_columns, customer_co
 def model_to_index(query_model, candidate_model, dataset_name, article_columns, test_days, trending_days, top_k, percent_trending):
   from signals import get_repeat_counts
   last_15_days = Datastore().load_from_dir(dataset_name)
+
+  from signals import augment_df_timestamp, augment_df_product_sales
 
   augment_df_timestamp(last_15_days)
   augment_df_product_sales(last_15_days)
@@ -131,9 +133,16 @@ def model_to_index(query_model, candidate_model, dataset_name, article_columns, 
 def test(index, products_indexed, dataset_name, test_days, customer_columns):
   from signals import get_bought
   test_datastore = Datastore().load_from_dir(dataset_name)
+  from signals import augment_df_timestamp, augment_df_product_sales
+
 
   augment_df_timestamp(test_datastore)
   augment_df_product_sales(test_datastore)
+
+  test_datastore.customers['age'].fillna(value=-1.0, inplace=True)
+  test_datastore.customers['age'] = test_datastore.customers['age'].astype(int)
+
+
   test_datastore = test_datastore.tail(days=test_days)
   print("test datastore", test_datastore.info())
   test_datastore.transactions = test_datastore.join_all()
@@ -193,47 +202,18 @@ def load_model(path):
   cm = tf.keras.models.load_model(path + "/cm/")
   return qm, cm
 
-def augment_df_timestamp(datastore):
-  transactions = datastore.transactions
-  ts = transactions[Fields.time_stamp]
-  day = ts.dt.day
-  month = ts.dt.month
-  year = ts.dt.year
-  transactions['day'] = day
-  transactions['month'] = month
-  transactions['year'] = year
-  return
-
-def augment_df_product_sales(datastore):
-  transactions = datastore.transactions
-  transactions[Fields.sales] = 1
-  article_groups = transactions[[Fields.sales, Fields.article_id]].groupby([Fields.article_id])
-  article_sales = article_groups.cumsum()
-  transactions['product_sales_total'] = article_sales
-
-  price_article_groups = transactions[[Fields.price, Fields.article_id]].groupby([Fields.article_id])
-  article_avg_prices = price_article_groups.mean()
-  article_avg_prices.rename(columns={Fields.price: 'product_price'}, inplace=True)
-  transactions = transactions.merge(article_avg_prices, on='article_id')
-
-  timed_article_groups = transactions[[Fields.sales, Fields.article_id, 'year', 'month']].groupby([Fields.article_id, 'year', 'month'])
-  timed_article_sales = timed_article_groups.sum()
-  transactions = transactions.join(timed_article_sales, on=['article_id', 'year', 'month'], rsuffix='_month')
-  transactions.rename(columns={'sales_month': 'product_sales_month'}, inplace=True)
-  datastore.transactions = transactions
-  category_columns = {'product_sales_month': 5, 'product_sales_total':5, 'product_price':10}
-  for column in category_columns:
-    q = category_columns[column]
-    datastore.transactions[column] = pd.qcut(datastore.transactions[column], q=q, labels=list(range(q)))
-    datastore.transactions[column] = datastore.transactions[column].astype(np.int64)
-
 
 def run():
-  dataset_name = "data/full/"
+  dataset_name = "data/sample31/"
   datastore = Datastore().load_from_dir(dataset_name)
+  from signals import augment_df_timestamp
+  from signals import augment_df_product_sales
 
   augment_df_timestamp(datastore)
   augment_df_product_sales(datastore)
+
+  datastore.customers['age'].fillna(value=-1.0, inplace=True)
+  datastore.customers['age'] = datastore.customers['age'].astype(int)
 
   product_feature_columns = ['product_code',
                      'section_no', 'garment_group_no',
@@ -250,23 +230,23 @@ def run():
 
   article_columns = ['article_id'] + product_feature_columns + product_sales_columns
 
-  customer_columns = ['customer_id'] + timestamp_columns
+  customer_columns = ['customer_id', 'age'] + timestamp_columns
 
-  train_days = 60
+  train_days = 45
   test_days = 8
-  trending_days = 15
+  trending_days = 21
   epochs = 5
   top_k = 96
   percent_trending = 0.1
 
-  # recommender_model = train(datastore, train_days, test_days, epochs, article_columns, customer_columns)
-  # query_model = recommender_model.query_model
-  # candidate_model = recommender_model.candidate_model
+  recommender_model = train(datastore, train_days, test_days, epochs, article_columns, customer_columns)
+  query_model = recommender_model.query_model
+  candidate_model = recommender_model.candidate_model
   # print(query_model.summary())
   # print(candidate_model.summary())
   #
   # save_model(query_model, candidate_model, path="modeldir")
-  query_model, candidate_model = load_model(path="modeldir")
+  # query_model, candidate_model = load_model(path="modeldir_100")
 
   index, products_indexed = model_to_index(query_model, candidate_model, dataset_name, article_columns, test_days, trending_days, top_k, percent_trending)
   scores = test(index, products_indexed, dataset_name, test_days, customer_columns + article_columns)
@@ -278,7 +258,6 @@ def run():
   WHY IS VAL LOSS INCREASING ? 
   WHAT IS GOING TO TEST IN DATES ? 
   ++ WHY IS MAPK LOWER AT 12 than 6 and so on .... #!%^@$&^@$&^@$^@  : because I was calling the function wrongly and I am stupid
-  
   ++ BINNING IS FUCKING BROKEN. replaced hashing with lookups. working now. 
   
   TODO

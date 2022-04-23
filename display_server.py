@@ -72,3 +72,6 @@ async def get_transactions(request: Request, id: str):
     return templates.TemplateResponse("item.html", {"request": request,
                                                     "transactions": transactions,
                                                     "customer":customer_info})
+
+
+## Run as uvicorn:display_server:app
